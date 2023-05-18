@@ -4,20 +4,37 @@ Description: >-
   serverless-api-starter-typescript
 
 Globals:
+  Api:
+    TracingEnabled: True
   Function:
     Timeout: 28
     Tracing: Active
     Handler: app.handler
-    Runtime: nodejs16.x
+    Runtime: nodejs18.x
     Architectures: [arm64]
-  Api:
-    TracingEnabled: True
+    MemorySize: 1024
+    Environment:
+      Variables:
+        METRICS_NAMESPACE: StarterApp
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
+
+Parameters:
+  AppName:
+    Type: String
+  # RestApiCertArn: # Create a cert in ACM for the below domain in us-east-1
+  #   Type: String
+  # RestApiDomain:
+  #   Type: String
+  # UserPoolArn:
+  #   Type: String
 
 Resources:
   ApiAccessLogGroup:
     Type: AWS::Logs::LogGroup
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Properties:
-      LogGroupName: !Sub /aws/apigateway/AccessLog-${RestApi}
+      LogGroupName: !Sub /aws/apigateway/AccessLog-${AppName}-${RestApi}
       RetentionInDays: 365
 
   RestApi:
@@ -35,50 +52,135 @@ Resources:
         DestinationArn: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ApiAccessLogGroup}"
         Format: '$context.identity.sourceIp $context.authorizer.claims.sub [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.requestId $context.awsEndpointRequestId $context.xrayTraceId $context.responseLatency $context.integrationLatency "$context.error.message"'
       StageName: api
-      Cors:
-        AllowOrigin: "'*'"
-        AllowMethods: "'OPTIONS,HEAD,GET,PUT,POST,DELETE'"
-        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      # Cors:
+      #   AllowOrigin: "'*'"
+      #   AllowMethods: "'OPTIONS,HEAD,GET,PATCH,PUT,POST,DELETE'"
+      #   AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      # Domain:
+      #   CertificateArn: !Ref RestApiCertArn
+      #   DomainName: !Ref RestApiDomain
+      #   EndpointConfiguration: EDGE
+      #   SecurityPolicy: TLS_1_2
+      # DisableExecuteApiEndpoint: true
+      # Auth:
+      #   ApiKeyRequired: false # Must be false at the top level for Cors
+      #   UsagePlan:
+      #     UsagePlanName: rest-api-usage
+      #     CreateUsagePlan: PER_API
+      #     Quota:
+      #       Limit: 100000
+      #       Period: DAY
+      #     Throttle:
+      #       BurstLimit: 500
+      #       RateLimit: 1000
+      #    Authorizers:
+      #      CognitoAuthorizer:
+      #        UserPoolArn: !Ref UserPoolArn
+      #        AuthorizationScopes: # Switches to access token
+      #          - res-mgmt-api/read
+      #          - res-mgmt-api/write
 
   HelloWorldFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: "es2020"
+        Sourcemap: true
+        EntryPoints:
+          - app.ts
     Properties:
-      CodeUri: api/hello-world/
+      CodeUri: src/api/hello-world/
+      Policies:
+        - CloudWatchPutMetricPolicy: {}
+        # - DynamoDBReadPolicy:
+        #     TableName: !Ref AppDB
+        # - DynamoDBWritePolicy:
+        #     TableName: !Ref AppDB
+      # Environment:
+      #   Variables:
+      #     TABLE_NAME: !Ref AppDB
+      #     USER_POOL_ID: !Ref UserPoolId
       Events:
-        HelloWorld:
+        HelloWorldGetId:
           Type: Api
           Properties:
+            RestApiId: !Ref RestApi
+            Path: /hello/{helloId}
+            Method: get
+            # Auth:
+            #   ApiKeyRequired: true # Should be set on each event
+            #   Authorizer: CognitoAuthorizer
+        HelloWorldHeadId:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /hello/{helloId}
+            Method: head
+            # Auth:
+            #   ApiKeyRequired: true # Should be set on each event
+            #   Authorizer: CognitoAuthorizer
+        HelloWorldGetList:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
             Path: /hello
             Method: get
-            RestApiId: !Ref RestApi
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: "es2020"
-        Sourcemap: true
-        EntryPoints:
-          - app.ts
-
-  GoodbyeWorldFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: api/goodbye-world/
-      Events:
-        GoodbyeWorld:
+            # Auth:
+            #   ApiKeyRequired: true # Should be set on each event
+            #   Authorizer: CognitoAuthorizer
+        HelloWorldHeadList:
           Type: Api
           Properties:
-            Path: /goodbye
-            Method: get
             RestApiId: !Ref RestApi
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: "es2020"
-        Sourcemap: true
-        EntryPoints:
-          - app.ts
+            Path: /hello
+            Method: head
+            # Auth:
+            #   ApiKeyRequired: true # Should be set on each event
+            #   Authorizer: CognitoAuthorizer
+
+  AppDB:
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: app-db
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      # TimeToLiveSpecification:
+      #   AttributeName: ttl
+      #   Enabled: true
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        # - AttributeName: companyId
+        #   AttributeType: S
+        # - AttributeName: orderId
+        #   AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      # GlobalSecondaryIndexes:
+      #   - IndexName: company-orders
+      #     KeySchema:
+      #       - AttributeName: companyId
+      #         KeyType: HASH
+      #       - AttributeName: orderId
+      #         KeyType: RANGE
+      #     Projection:
+      #       ProjectionType: INCLUDE
+      #       NonKeyAttributes:
+      #         - createdOn
+      #         - updatedOn
+      #         - total
 
 Outputs:
   HelloWorldApi:

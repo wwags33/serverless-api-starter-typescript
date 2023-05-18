@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "noImplicitAny": true,
     "removeComments": true,
     "sourceMap": true,
@@ -10,8 +10,7 @@
     "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "types": ["@types/jest"]
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["**/*.test.ts", "jest.config.js"]
+  "exclude": ["node_modules", "**/*.test.ts"]
 }

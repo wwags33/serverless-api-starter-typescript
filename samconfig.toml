@@ -1,5 +1,15 @@
 version = 0.1
 [default]
+[default.build]
+[default.build.parameters]
+beta_features = true
+[default.sync]
+[default.sync.parameters]
+beta_features = true
+[default.local_start_api]
+[default.local_start_api.parameters]
+region = "us-east-2"
+profile = "api-dev"
 [default.deploy]
 [default.deploy.parameters]
 stack_name = "starter-test-ts"
@@ -10,3 +20,4 @@ profile = "api-dev"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
+parameter_overrides = "AppName=\"StarterApp\""
